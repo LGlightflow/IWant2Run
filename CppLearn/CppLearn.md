@@ -103,4 +103,105 @@ void foo() {
 ```
 
 ### 智能指针
+C++ 引入了智能指针。智能指针利用 RAII（Resource Acquisition Is Initialization，资源获取即初始化）机制，将内存的管理和对象的生命周期绑定在一起。当智能指针对象创建时，它获取资源（即分配内存）；当智能指针对象销毁时，它自动释放所指向的内存，无需手动调用delete。
 
+智能指针类型
+#### unique_ptr
+保证同一时间内只有一个智能指针可以指向该对象，为了确保资源独占性，unique_ptr不允许拷贝和赋值
+
+```cpp
+#include <iostream>
+#include <memory>
+
+int main() {
+    std::unique_ptr<int> u1(new int(10));
+    // std::unique_ptr<int> u2 = u1;  // 编译错误，不允许拷贝
+    std::unique_ptr<int> u3 = std::move(u1);  //std::move 将u1的所有权转给u3后，u1为空指针，u3有资源的所有权
+    if (!u1) {
+        std::cout << "u1 is nullptr" << std::endl;
+    }
+    std::cout << *u3 << std::endl; 
+    return 0;
+}
+```
+
+#### shared_ptr
+
+shared_ptr实现了共享式拥有概念，允许多个智能指针指向相同对象，通过引用计数机制来管理对象的生命周期 。当一个shared_ptr指向对象时，引用计数加 1；当shared_ptr离开作用域或被重新赋值时，引用计数减 1，当引用计数为 0 时，对象会被自动释放。
+```cpp
+#include <iostream>
+#include <memory>
+
+int main() {
+    std::shared_ptr<int> s1(new int(10));
+    std::shared_ptr<int> s2 = s1; 
+    std::cout << "s1 use_count: " << s1.use_count() << std::endl; // s1,s2 共享1个对象，引用计数为2，
+    std::cout << "s2 use_count: " << s2.use_count() << std::endl; 
+    s1.reset(); 
+    std::cout << "s2 use_count: " << s2.use_count() << std::endl; //s1调用reset后，只有s2指向对象
+    return 0;
+}
+```
+shared_ptr在多线程环境中使用时，需要注意线程安全问题，因为引用计数的修改不是原子操作，可能会导致数据竞争 。（使用std::atomic来实现原子操作，或者使用互斥锁来保护引用计数的修改 ）
+
+
+#### weak_ptr
+weak_ptr是一种不控制对象生命周期的智能指针，它指向一个由shared_ptr管理的对象，主要用于协助shared_ptr解决循环引用问题 。weak_ptr不会增加对象的引用计数，它的构造和析构不会影响对象的生命周期 。
+
+```cpp
+#include <iostream>
+#include <memory>
+
+class B;
+class A {
+public:
+    std::shared_ptr<B> pb_;
+    ~A() {
+        std::cout << "A delete" << std::endl;
+    }
+};
+
+class B {
+public:
+    std::shared_ptr<A> pa_;
+    ~B() {
+        std::cout << "B delete" << std::endl;
+    }
+};
+
+void fun() {
+    std::shared_ptr<A> pa(new A());
+    std::shared_ptr<B> pb(new B());
+    pa->pb_ = pb;
+    pb->pa_ = pa;
+    std::cout << "pa use_count: " << pa.use_count() << std::endl; 
+    std::cout << "pb use_count: " << pb.use_count() << std::endl; 
+}
+
+int main() {
+    fun();
+    return 0;
+}
+```
+
+```cpp
+#include <iostream>
+#include <memory>
+
+int main() {
+    std::shared_ptr<int> s1(new int(10));
+    std::weak_ptr<int> w1 = s1; 
+    if (std::shared_ptr<int> s2 = w1.lock()) {  //lock函数提升weak_ptr为shared_ptr
+        std::cout << *s2 << std::endl; 
+    } else {
+        std::cout << "object has been deleted" << std::endl;
+    }
+    s1.reset(); 
+    if (std::shared_ptr<int> s3 = w1.lock()) { 
+        std::cout << *s3 << std::endl; 
+    } else {
+        std::cout << "object has been deleted" << std::endl; // 释放后返回空的shared_ptr
+    }
+    return 0;
+}
+```
